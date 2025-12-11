@@ -49,7 +49,7 @@ ORDER BY created_at DESC;
 	}
 	defer rows.Close()
 
-	var videos []Video
+	videos := []Video{}
 	for rows.Next() {
 		var v Video
 		if err := rows.Scan(&v.ID, &v.Title, &v.CreatedAt); err != nil {

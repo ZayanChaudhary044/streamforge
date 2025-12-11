@@ -37,12 +37,12 @@ func (h *Handler) CreateVideo(w http.ResponseWriter, r *http.Request) {
 
 // GET /videos
 func (h *Handler) ListVideos(w http.ResponseWriter, r *http.Request) {
-	videos, err := h.Repo.List(r.Context())
-	if err != nil {
-		http.Error(w, "failed to list videos", http.StatusInternalServerError)
-		return
-	}
+    videos, err := h.Repo.List(r.Context())
+    if err != nil {
+        http.Error(w, "failed to list videos", http.StatusInternalServerError)
+        return
+    }
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(videos)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(videos)
 }
