@@ -26,6 +26,7 @@ func createSchema(db *sql.DB) {
 CREATE TABLE IF NOT EXISTS videos (
 	id UUID PRIMARY KEY,
 	title TEXT NOT NULL,
+	filename TEXT NOT NULL,
 	created_at TIMESTAMPTZ DEFAULT NOW()
 );
 `

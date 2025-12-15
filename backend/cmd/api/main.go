@@ -42,8 +42,11 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("POST /videos", videoHandler.CreateVideo)
+	mux.HandleFunc("GET /media/{filename}", video.ServeMedia)
+	mux.HandleFunc("GET /thumbnails/{filename}", video.ServeThumbnail)
+
 	mux.HandleFunc("GET /videos", videoHandler.ListVideos)
+	mux.HandleFunc("POST /videos/upload", videoHandler.UploadVideo)
 
 	log.Println("backend listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", withCORS(mux)))

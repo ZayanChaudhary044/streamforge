@@ -4,6 +4,8 @@ const API_BASE =
 export interface Video {
   id: string;
   title: string;
+  filename: string;
+  thumbnail: string;
   created_at: string;
 }
 
