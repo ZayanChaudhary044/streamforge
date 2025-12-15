@@ -5,14 +5,15 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/google/uuid"
 )
 
+// Shared upload directory
 const UploadDir = "./uploads"
 
+// Handler required by main.go
 type Handler struct {
 	Repo *Repository
 }
@@ -21,7 +22,9 @@ func NewHandler(repo *Repository) *Handler {
 	return &Handler{Repo: repo}
 }
 
-// List videos
+// =========================
+// GET /videos
+// =========================
 func (h *Handler) ListVideos(w http.ResponseWriter, r *http.Request) {
 	videos, err := h.Repo.List(r.Context())
 	if err != nil {
@@ -33,7 +36,9 @@ func (h *Handler) ListVideos(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(videos)
 }
 
-// Upload video + generate thumbnail
+// =========================
+// POST /videos/upload (ASYNC)
+// =========================
 func (h *Handler) UploadVideo(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(100 << 20); err != nil {
 		http.Error(w, "file too large", http.StatusBadRequest)
@@ -45,6 +50,11 @@ func (h *Handler) UploadVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing file", http.StatusBadRequest)
 		return
 	}
+	if err != nil {
+	log.Printf("upload error: %v", err)
+	http.Error(w, "failed to enqueue job", http.StatusInternalServerError)
+	return
+}
 	defer file.Close()
 
 	title := r.FormValue("title")
@@ -53,30 +63,21 @@ func (h *Handler) UploadVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure directories exist
-	if err := os.MkdirAll(UploadDir, 0755); err != nil {
+	// Ensure raw upload directory exists
+	rawDir := filepath.Join(UploadDir, "raw")
+	if err := os.MkdirAll(rawDir, 0755); err != nil {
 		http.Error(w, "failed to create upload dir", http.StatusInternalServerError)
 		return
 	}
 
-	thumbDir := filepath.Join(UploadDir, "thumbnails")
-	if err := os.MkdirAll(thumbDir, 0755); err != nil {
-		http.Error(w, "failed to create thumbnail dir", http.StatusInternalServerError)
-		return
-	}
+	videoID := uuid.New()
+	jobID := uuid.New()
 
-	id := uuid.New().String()
 
-	rawFilename := id + "_" + header.Filename
-	rawPath := filepath.Join(UploadDir, rawFilename)
+	// Save raw file
+	rawFilename := videoID + "_" + header.Filename
+	rawPath := filepath.Join(rawDir, rawFilename)
 
-	finalFilename := id + ".mp4"
-	finalPath := filepath.Join(UploadDir, finalFilename)
-
-	thumbName := id + ".jpg"
-	thumbPath := filepath.Join(thumbDir, thumbName)
-
-	// Save raw upload
 	out, err := os.Create(rawPath)
 	if err != nil {
 		http.Error(w, "failed to save file", http.StatusInternalServerError)
@@ -89,62 +90,30 @@ func (h *Handler) UploadVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Transcode to mp4
-	transcodeCmd := exec.Command(
-		"ffmpeg",
-		"-y",
-		"-i", rawPath,
-		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", "23",
-		"-c:a", "aac",
-		"-b:a", "128k",
-		finalPath,
-	)
-
-	transcodeCmd.Stdout = os.Stdout
-	transcodeCmd.Stderr = os.Stderr
-
-	if err := transcodeCmd.Run(); err != nil {
-		http.Error(w, "video processing failed", http.StatusInternalServerError)
-		return
-	}
-
-	_ = os.Remove(rawPath)
-
-	// Generate thumbnail
-	thumbCmd := exec.Command(
-		"ffmpeg",
-		"-y",
-		"-i", finalPath,
-		"-ss", "00:00:01",
-		"-vframes", "1",
-		"-f", "image2",
-		thumbPath,
-	)
-
-	thumbCmd.Stdout = os.Stdout
-	thumbCmd.Stderr = os.Stderr
-
-	if err := thumbCmd.Run(); err != nil {
-		http.Error(w, "thumbnail generation failed", http.StatusInternalServerError)
-		return
-	}
-
-	// Store metadata
-	video, err := h.Repo.Create(
+	// 1️⃣ Create "processing" video
+	video, err := h.Repo.CreateProcessing(
 		r.Context(),
-		id,
+		videoID.String(),
 		title,
-		finalFilename,
-		thumbName,
 	)
 	if err != nil {
-		http.Error(w, "database insert failed", http.StatusInternalServerError)
+		http.Error(w, "failed to create video", http.StatusInternalServerError)
 		return
 	}
 
+	// 2️⃣ Enqueue background job
+	if err := h.Repo.EnqueueJob(
+		r.Context(),
+		jobID.String(),
+		videoID.String(),
+		rawPath,
+	); err != nil {
+		http.Error(w, "failed to enqueue job", http.StatusInternalServerError)
+		return
+	}
+
+	// 3️⃣ Respond immediately
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(video)
 }

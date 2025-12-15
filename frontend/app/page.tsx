@@ -1,21 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchVideos, Video } from "./lib/api";
 import Link from "next/link";
+import { fetchVideos, Video } from "./lib/api";
 
 export default function HomePage() {
   const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   async function loadVideos() {
     try {
-      setVideos(await fetchVideos());
+      setLoading(true);
+      const data = await fetchVideos();
+
+      // ✅ GUARANTEE array
+      setVideos(Array.isArray(data) ? data : []);
+      setError(null);
     } catch {
+      setVideos([]);
       setError("Failed to load videos");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -27,7 +37,7 @@ export default function HomePage() {
     e.preventDefault();
     if (!title || !file) return;
 
-    setLoading(true);
+    setUploading(true);
     setError(null);
 
     try {
@@ -40,7 +50,7 @@ export default function HomePage() {
         body: data,
       });
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error();
 
       setTitle("");
       setFile(null);
@@ -48,13 +58,13 @@ export default function HomePage() {
     } catch {
       setError("Failed to upload video");
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   }
 
   return (
     <main className="space-y-8">
-      {/* Upload section */}
+      {/* Upload */}
       <section className="rounded-xl border border-slate-800 p-6">
         <h2 className="mb-4 text-lg font-semibold">Upload Video</h2>
 
@@ -74,44 +84,57 @@ export default function HomePage() {
           />
 
           <button
-            disabled={loading}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white"
+            disabled={uploading}
+            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {loading ? "Uploading..." : "Upload"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
         </form>
 
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
       </section>
 
-      {/* Videos section */}
+      {/* Videos */}
       <section className="rounded-xl border border-slate-800 p-6">
         <h2 className="mb-4 text-lg font-semibold">Videos</h2>
 
-        {videos.length === 0 ? (
-          <p className="text-sm text-slate-400">No videos yet</p>
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading videos…</p>
+        ) : videos.length === 0 ? (
+          <p className="text-sm text-slate-400">No videos uploaded yet</p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {videos.map((v) => (
-              <li key={v.id}>
-                {/* 🔴 THIS IS THE IMPORTANT PART */}
-                <Link
-                  href={`/watch/${v.id}`}
-                  className="block rounded-lg border border-slate-800 p-4 space-y-2 hover:border-slate-600 transition cursor-pointer"
-                >
-                  <img
-                    src={`http://localhost:8080/thumbnails/${v.thumbnail}`}
-                    alt={v.title}
-                    className="w-full h-40 object-cover rounded-lg"
-                  />
-
-                  <div>
-                    <p className="font-medium">{v.title}</p>
-                    <p className="text-xs text-slate-400">
-                      {new Date(v.created_at).toLocaleString()}
-                    </p>
+              <li
+                key={v.id}
+                className="rounded-xl border border-slate-800 overflow-hidden"
+              >
+                {v.thumbnail ? (
+                  <Link href={`/watch/${v.id}`}>
+                    <img
+                      src={`http://localhost:8080/thumbnails/${v.thumbnail}`}
+                      alt={v.title}
+                      className="h-40 w-full object-cover cursor-pointer hover:opacity-90 transition"
+                    />
+                  </Link>
+                ) : (
+                  <div className="h-40 w-full bg-slate-900 animate-pulse flex items-center justify-center text-xs text-slate-500">
+                    Processing…
                   </div>
-                </Link>
+                )}
+
+                <div className="p-3 space-y-1">
+                  <p className="font-medium truncate">{v.title}</p>
+                  <p className="text-xs text-slate-400">
+                    {new Date(v.created_at).toLocaleString()}
+                  </p>
+
+                  {v.status !== "ready" && (
+                    <span className="inline-block rounded bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-400">
+                      {v.status}
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

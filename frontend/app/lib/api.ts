@@ -6,6 +6,8 @@ export interface Video {
   title: string;
   filename: string;
   thumbnail: string;
+  status: "processing" | "ready" | "failed";
+  error: string | null;
   created_at: string;
 }
 
